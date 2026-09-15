@@ -1,0 +1,7 @@
+# Pinned to majors; JAX and NumPyro move fast enough that an unpinned build
+# will drift out from under you.
+numpy>=1.26,<3
+pandas>=2.0,<4
+netCDF4>=1.6,<2
+jax[cpu]>=0.4.28,<0.7
+numpyro>=0.15,<0.20
