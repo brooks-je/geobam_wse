@@ -37,7 +37,7 @@ Z0_SD = 1.0
 # log-Q. A log-Q error of sigma maps to roughly f * sigma in log-depth, so at
 # F_HAT = 0.45 the historical 0.26 is about 2.2x wider than intended. Left at
 # 0.26 to match the R module; override with GEOBAM_WSE_SIGMA_MAN to test.
-SIGMA_MAN = 0.26
+SIGMA_MAN = 0.117
 
 ITER = 2000
 
