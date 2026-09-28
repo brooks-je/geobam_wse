@@ -101,7 +101,8 @@ def build_model_data(data, width_gates_hasdat=False):
     logDc_hat = np.full(nx, LOGDC_HAT)
 
     # z0 prior: the lowest observed water surface, less a nominal depth d_c.
-    z0_hat = Hmin - np.exp(logDc_hat)
+    # z0_hat = Hmin - np.exp(logDc_hat)
+    z0_hat = Hmin
     z0_sd = np.full(nx, _env_num("GEOBAM_WSE_Z0_SD", Z0_SD))
 
     sigma_man = _env_num("GEOBAM_WSE_SIGMA_MAN", SIGMA_MAN)
