@@ -1,0 +1,35 @@
+name: Build and push image (ghcr.io)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Image tag, e.g. 0.2.0
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ghcr.io/brooks-je/geobam_wse:${{ inputs.version }}
+            ghcr.io/brooks-je/geobam_wse:latest
