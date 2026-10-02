@@ -60,8 +60,8 @@ def _env_num(name, default, cast=float):
         return cast(float(raw))
     except (TypeError, ValueError):
         return default
-
-
+    )
+    
 def _truncated(name, loc, scale, low, high, size):
     return numpyro.sample(
         name,
@@ -69,7 +69,22 @@ def _truncated(name, loc, scale, low, high, size):
                              low=float(low), high=float(high))
         .expand([size]).to_event(1),
     )
-
+def _tighten_bounds(data, names, k):
+    """Clip [lower, upper] to hat ± k*sd, never widening the originals."""
+    data = dict(data)
+    for name in names:
+        hat = np.asarray(data[f"{name}_hat"], dtype=float)
+        sd = np.asarray(data[f"{name}_sd"], dtype=float)
+        lo0 = np.asarray(data[f"lowerbound_{name}"], dtype=float)
+        hi0 = np.asarray(data[f"upperbound_{name}"], dtype=float)
+        lo = np.maximum(lo0, hat - k * sd)
+        hi = np.minimum(hi0, hat + k * sd)
+        bad = lo >= hi                      # hat outside the original bounds
+        lo = np.where(bad, lo0, lo)
+        hi = np.where(bad, hi0, hi)
+        data[f"lowerbound_{name}"] = lo
+        data[f"upperbound_{name}"] = hi
+    return data
 
 def geobam_wse_model(data):
     """The AHG/AMHG depth model as a NumPyro model."""
@@ -140,6 +155,10 @@ def geobam_wse_model(data):
 
 
 def run_sampler(data, seed=0):
+    k = _env_num("GEOBAM_WSE_BOUND_K", 0.0)
+    if k > 0:
+        data = _tighten_bounds(
+            data, ("r", "logWb", "logn", "logDb", "f", "logDc", "logQ"), k)
     """Sample the posterior. Returns (summary_dict, logQ_draws)."""
     iter_total = int(_env_num("GEOBAM_WSE_ITER", data.get("iter", 2000)))
     warmup = int(_env_num("GEOBAM_WSE_WARMUP", max(500, int(0.4 * iter_total))))
