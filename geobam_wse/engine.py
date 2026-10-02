@@ -50,7 +50,7 @@ from .flowlaw import build_index_arrays, remake_discharge  # noqa: F401
 
 # Parameters reported per node, in the order the output module expects.
 NODE_PARAMS = ("r", "logn", "logWb", "logDb", "f", "logDc", "z0")
-
+GEOBAM_WSE_BOUND_K = 2
 
 def _env_num(name, default, cast=float):
     raw = os.environ.get(name, "")
@@ -60,15 +60,16 @@ def _env_num(name, default, cast=float):
         return cast(float(raw))
     except (TypeError, ValueError):
         return default
-    )
-    
+
+
 def _truncated(name, loc, scale, low, high, size):
     return numpyro.sample(
         name,
         dist.TruncatedNormal(loc=loc, scale=scale,
-                             low=float(low), high=float(high))
+                             low=jnp.asarray(low), high=jnp.asarray(high))
         .expand([size]).to_event(1),
     )
+    
 def _tighten_bounds(data, names, k):
     """Clip [lower, upper] to hat ± k*sd, never widening the originals."""
     data = dict(data)
@@ -155,11 +156,11 @@ def geobam_wse_model(data):
 
 
 def run_sampler(data, seed=0):
+    """Sample the posterior. Returns (summary_dict, logQ_draws)."""
     k = _env_num("GEOBAM_WSE_BOUND_K", 0.0)
     if k > 0:
         data = _tighten_bounds(
             data, ("r", "logWb", "logn", "logDb", "f", "logDc", "logQ"), k)
-    """Sample the posterior. Returns (summary_dict, logQ_draws)."""
     iter_total = int(_env_num("GEOBAM_WSE_ITER", data.get("iter", 2000)))
     warmup = int(_env_num("GEOBAM_WSE_WARMUP", max(500, int(0.4 * iter_total))))
     num_samples = max(1, iter_total - warmup)
