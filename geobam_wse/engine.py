@@ -5,10 +5,6 @@ Flow law (AHG/AMHG depth formulation):
     Q = ((H - z0)/d_c)^(1/f) * [ W_b (1/d_b)^(1/r) ((r+1)/r)^(1/r)
                                  S^(1/2) (1/n) d_c^(5/3 + 1/r) ]
 
-The bracketed term is the centre-point discharge Qc, the discharge at which
-depth equals d_c. Solving for log-depth gives the line the likelihood is
-written on:
-
     logQc = logWb - (1/r) logDb + (1/r)(log(r+1) - log r)
             + (1/2) logS - logn + (5/3 + 1/r) logDc
 
@@ -121,7 +117,7 @@ def geobam_wse_model(data):
     d_obs = Hobsvec - z0[xind]      # >= depth_min > 0 by construction
     logd = jnp.log(d_obs)
 
-    # logQc: the bracketed centre-point discharge, per observation.
+  # Congruent discharge
     logQc = (logWb[xind]
              - invr * logDb[xind]
              + invr * (jnp.log(r_c + 1.0) - jnp.log(r_c))
