@@ -18,7 +18,7 @@ def build_index_arrays(hasdat):
 
 
 def log_qc(r, logWb, logDb, logn, logDc, logS):
-    """Centre-point discharge, on the log scale.
+    """Congruent discharge, on the log scale.
 
     logQc = logWb - (1/r) logDb + (1/r)(log(r+1) - log r)
             + (1/2) logS - logn + (5/3 + 1/r) logDc
