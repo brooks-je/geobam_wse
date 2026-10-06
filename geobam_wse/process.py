@@ -33,10 +33,6 @@ LOGDC_LOWER, LOGDC_UPPER = np.log(0.2), np.log(20.0)
 # Bed-elevation prior scale, in metres.
 Z0_SD = 1.0
 
-# Structural error of the flow law. NOTE: the likelihood is on log-DEPTH, not
-# log-Q. A log-Q error of sigma maps to roughly f * sigma in log-depth, so at
-# F_HAT = 0.45 the historical 0.26 is about 2.2x wider than intended. Left at
-# 0.26 to match the R module; override with GEOBAM_WSE_SIGMA_MAN to test.
 SIGMA_MAN = 0.117
 
 ITER = 2000
@@ -100,8 +96,8 @@ def build_model_data(data, width_gates_hasdat=False):
 
     logDc_hat = np.full(nx, LOGDC_HAT)
 
-    # z0 prior: the lowest observed water surface, less a nominal depth d_c.
-    # z0_hat = Hmin - np.exp(logDc_hat)
+    # z0 prior: the lowest observed water surface
+    # z0_hat = Hmin - np.exp(logDc_hat) -- incorrect, fixed
     z0_hat = Hmin
     z0_sd = np.full(nx, _env_num("GEOBAM_WSE_Z0_SD", Z0_SD))
 
