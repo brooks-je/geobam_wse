@@ -166,7 +166,7 @@ def run_sampler(data, seed=0):
     num_samples = max(1, iter_total - warmup)
     chains = int(_env_num("GEOBAM_WSE_CHAINS", 3))
     max_td = int(_env_num("GEOBAM_WSE_MAX_TREEDEPTH", 10))
-    adapt_delta = _env_num("GEOBAM_WSE_ADAPT_DELTA", 0.8)
+    adapt_delta = _env_num("GEOBAM_WSE_ADAPT_DELTA", 0.4)
     dense = bool(_env_num("GEOBAM_WSE_DENSE_MASS", 0))
     progress = bool(_env_num("GEOBAM_WSE_PROGRESS", 1))
 
