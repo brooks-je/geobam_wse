@@ -45,6 +45,7 @@ import numpyro
 import numpyro.distributions as dist
 from numpyro.infer import MCMC, NUTS, init_to_value
 import numpyro.optim as optim
+from numpyro import handlers
 from numpyro.infer import SVI, Trace_ELBO, Predictive
 from numpyro.infer.autoguide import AutoMultivariateNormal
 from .flowlaw import build_index_arrays, remake_discharge  # noqa: F401
@@ -206,9 +207,17 @@ def run_sampler(data, seed=0):
               f"last 10%={losses[-n10:].mean():.1f}  "
               f"finite={np.isfinite(losses).all()}", flush=True)
 
+        # Return the same sites mcmc.get_samples() would: every sampled
+        # (non-observed) parameter plus every deterministic quantity.
+        tr = handlers.trace(handlers.seed(geobam_wse_model, 0)).get_trace(data)
+        keep = [name for name, site in tr.items()
+                if (site["type"] == "sample" and not site["is_observed"])
+                or site["type"] == "deterministic"]
+
         samples = Predictive(
             geobam_wse_model, guide=guide, params=svi_result.params,
-            num_samples=num_samples * chains)(key_draw, data)
+            num_samples=num_samples * chains,
+            return_sites=keep)(key_draw, data)
 
     else:
         kernel = NUTS(
