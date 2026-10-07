@@ -34,6 +34,30 @@ def log_qc(r, logWb, logDb, logn, logDc, logS):
             - logn
             + (5.0 / 3.0 + invr) * logDc)
 
+def manning_terms(logW, logS, logd, r, logn_man, logQ, xp=np):
+    """Both sides of geoBAM's Manning likelihood, in depth form.
+ 
+    geoBAM writes Manning, Q = (1/n) A^(5/3) W^(-2/3) S^(1/2), multiplied by
+    six and rearranged so that only data sit on the left:
+ 
+        man_lhs = 4 logW - 3 logS
+        man_rhs = 10 logA - 6 logn - 6 logQ
+ 
+    and scores man_lhs ~ normal(man_rhs, 6 sigma_man). geoBAM builds A from
+    A0 + dA. Here A comes from width and depth instead:
+ 
+        A = W * dbar,   dbar = (r / (r + 1)) * (H - z0)
+ 
+    i.e. the mean depth of a power-law cross-section whose maximum depth is
+    H - z0, and R ~ dbar for a wide channel.
+ 
+    Everything is elementwise, so pass already-expanded per-observation
+    arrays. xp is numpy by default; the engine passes jax.numpy.
+    """
+    logA = logW + xp.log(r / (r + 1.0)) + logd
+    lhs = 4.0 * logW - 3.0 * logS
+    rhs = 10.0 * logA - 6.0 * logn_man - 6.0 * logQ
+    return lhs, rhs
 
 def remake_discharge(Sobs, Hobs, posteriors, hasdat=None):
     """Rebuild discharge from posterior means (diagnostic, not the reported Q).
