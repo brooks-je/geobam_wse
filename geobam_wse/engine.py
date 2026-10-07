@@ -156,19 +156,36 @@ def geobam_wse_model(data):
     # See note 1: change of variables from H to log-depth.
     numpyro.factor("jacobian", -logd.sum())
 
-
-import os
-import numpyro.optim as optim
-from numpyro.infer import SVI, Trace_ELBO, Predictive, init_to_value
-from numpyro.infer.autoguide import AutoMultivariateNormal
-
-
 def run_sampler(data, seed=0):
     """Sample the posterior. Returns (summary_dict, logQ_draws)."""
+    k = _env_num("GEOBAM_WSE_BOUND_K", 0.0)
+    if k > 0:
+        data = _tighten_bounds(
+            data, ("r", "logWb", "logn", "logDb", "f", "logDc", "logQ"), k)
+    iter_total = int(_env_num("GEOBAM_WSE_ITER", data.get("iter", 2000)))
+    warmup = int(_env_num("GEOBAM_WSE_WARMUP", max(500, int(0.4 * iter_total))))
+    num_samples = max(1, iter_total - warmup)
+    chains = int(_env_num("GEOBAM_WSE_CHAINS", 3))
+    max_td = int(_env_num("GEOBAM_WSE_MAX_TREEDEPTH", 10))
+    adapt_delta = _env_num("GEOBAM_WSE_ADAPT_DELTA", 0.4)
+    dense = bool(_env_num("GEOBAM_WSE_DENSE_MASS", 0))
+    progress = bool(_env_num("GEOBAM_WSE_PROGRESS", 1))
+
+    print(f"problem size: nx={data['nx']} nt={data['nt']} ntot={data['ntot']}",
+          flush=True)
+    print(f"sampler: warmup={warmup} samples={num_samples} chains={chains} "
+          f"max_treedepth={max_td} target_accept={adapt_delta} "
+          f"dense_mass={dense}", flush=True)
+
+    # Start depth_min at its prior location rather than wherever the
+    # unconstrained default lands, which for a deep river puts z0 far above
+    # the bed and starts the chain in a badly curved region.
     d0 = np.asarray(data["Hmin"] - data["z0_hat"], dtype=float)
     d0[~np.isfinite(d0) | (d0 <= 0)] = 1.0
     init_vals = {"depth_min": jnp.asarray(d0)}
+
     method = os.environ.get("GEOBAM_WSE_METHOD", "nuts").lower()
+    print(f"method: {method}", flush=True)
     key_fit, key_draw = jax.random.split(jax.random.PRNGKey(seed))
     t0 = time.time()
 
@@ -215,7 +232,6 @@ def run_sampler(data, seed=0):
         samples = mcmc.get_samples(group_by_chain=False)
 
     return _summarise(samples), np.asarray(samples["logQ"])
-
 
 def _report_diagnostics(mcmc, max_td):
     """Print the diagnostics that explain a slow or untrustworthy run."""
