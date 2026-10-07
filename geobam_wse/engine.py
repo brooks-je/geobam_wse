@@ -165,11 +165,12 @@ from numpyro.infer.autoguide import AutoMultivariateNormal
 
 def run_sampler(data, seed=0):
     """Sample the posterior. Returns (summary_dict, logQ_draws)."""
-
+    d0 = np.asarray(data["Hmin"] - data["z0_hat"], dtype=float)
+    d0[~np.isfinite(d0) | (d0 <= 0)] = 1.0
+    init_vals = {"depth_min": jnp.asarray(d0)}
     method = os.environ.get("GEOBAM_WSE_METHOD", "nuts").lower()
     key_fit, key_draw = jax.random.split(jax.random.PRNGKey(seed))
     t0 = time.time()
-    init_vals = {"depth_min": jnp.asarray(d0)}
 
     if method == "vi":
         vi_steps = int(_env_num("GEOBAM_WSE_VI_STEPS", 10000))
