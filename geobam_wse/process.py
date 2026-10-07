@@ -35,6 +35,8 @@ Z0_SD = 1.0
 
 SIGMA_MAN = 0.117
 
+SIGMA_MANNING = 0.26
+
 ITER = 2000
 
 
@@ -107,6 +109,19 @@ def build_model_data(data, width_gates_hasdat=False):
           f"WSE, sd {z0_sd[0]:.2f} m | sigma_man {sigma_man:.3f} "
           f"(log-depth scale)", flush=True)
 
+    # Manning cells: geoBAM's hasdat_man. Width is only needed here, so a
+    # missing width drops a cell from the Manning term, not from the model.
+    Wobsvec = Wobs[xind, tind]
+    man_ok = np.isfinite(Wobsvec) & (Wobsvec > 0)
+    man_sel = np.nonzero(man_ok)[0].astype(np.int32)
+    inc_man = bool(_env_num("GEOBAM_WSE_MANNING", 1)) and man_sel.size >= 3
+    sigma_manning = _env_num("GEOBAM_WSE_SIGMA_MANNING", SIGMA_MANNING)
+    if inc_man:
+        print(f"Manning term: on, {man_sel.size}/{ntot} cells with width, "
+              f"sigma {sigma_manning:.3f} (log-Q scale)", flush=True)
+    else:
+        print("Manning term: off", flush=True)
+
     q = data["sos_data"]["Q_priors"]
 
     return {
@@ -116,6 +131,11 @@ def build_model_data(data, width_gates_hasdat=False):
         "logSobsvec": logSobsvec,
         "Hmin": Hmin,
         "sigma_vec_man": np.full(ntot, sigma_man),
+
+        "inc_man": inc_man,
+        "man_sel": man_sel,
+        "logWobs_man": np.log(Wobsvec[man_sel]),
+        "sigma_vec_manning": np.full(man_sel.size, sigma_manning),
 
         "logQ_hat": np.asarray(q["logQ_hat"], dtype=float),
         "logQ_sd": np.full(nt, float(q["logQ_sd"])),
