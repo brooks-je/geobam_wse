@@ -52,7 +52,7 @@ from .flowlaw import build_index_arrays, remake_discharge  # noqa: F401
 # re-exported so callers can keep importing them from engine
 
 # Parameters reported per node, in the order the output module expects.
-NODE_PARAMS = ("r", "logn", "logWb", "logDb", "f", "logDc", "z0")
+NODE_PARAMS = ("r", "logn", "logWb", "logDb", "f", "logDc", "z0", "logn_man")
 GEOBAM_WSE_BOUND_K = 0
 
 def _env_num(name, default, cast=float):
@@ -156,6 +156,30 @@ def geobam_wse_model(data):
 
     # See note 1: change of variables from H to log-depth.
     numpyro.factor("jacobian", -logd.sum())
+
+    # --- Manning likelihood (geoBAM's inc_m branch, depth form) ------------
+    # Shares logQ with the depth line above; that shared logQ is what
+    # balances the two, exactly as in geoBAM. Like geoBAM it gets its own
+    # roughness, logn_man, with the same prior as logn. Applied only on cells
+    # with a usable width (geoBAM's hasdat_man).
+    #
+    # No extra Jacobian: the left-hand side is data only (log W, log S) and
+    # z0 enters through the mean, so this is a density over the data as
+    # written -- the same structure as geoBAM's Manning term.
+    if data["inc_man"]:
+        logn_man = _truncated("logn_man", data["logn_hat"], data["logn_sd"],
+                              data["lowerbound_logn"],
+                              data["upperbound_logn"], nx)
+        m = data["man_sel"]
+        xm = xind[m]
+        man_lhs, man_rhs = manning_terms(
+            data["logWobs_man"], logSobsvec[m], logd[m], r[xm],
+            logn_man[xm], logQ[tind[m]], xp=jnp)
+        numpyro.factor(
+            "manning_likelihood",
+            dist.Normal(man_rhs, 6.0 * data["sigma_vec_manning"])
+            .log_prob(man_lhs).sum(),
+        )
 
 def run_sampler(data, seed=0):
     """Sample the posterior. Returns (summary_dict, logQ_draws)."""
