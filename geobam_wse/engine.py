@@ -44,7 +44,9 @@ import jax.numpy as jnp
 import numpyro
 import numpyro.distributions as dist
 from numpyro.infer import MCMC, NUTS, init_to_value
-
+import numpyro.optim as optim
+from numpyro.infer import SVI, Trace_ELBO, Predictive
+from numpyro.infer.autoguide import AutoMultivariateNormal
 from .flowlaw import build_index_arrays, remake_discharge  # noqa: F401
 # re-exported so callers can keep importing them from engine
 
@@ -155,59 +157,61 @@ def geobam_wse_model(data):
     numpyro.factor("jacobian", -logd.sum())
 
 
+import os
+import numpyro.optim as optim
+from numpyro.infer import SVI, Trace_ELBO, Predictive, init_to_value
+from numpyro.infer.autoguide import AutoMultivariateNormal
+
+
 def run_sampler(data, seed=0):
     """Sample the posterior. Returns (summary_dict, logQ_draws)."""
-    k = _env_num("GEOBAM_WSE_BOUND_K", 0.0)
-    if k > 0:
-        data = _tighten_bounds(
-            data, ("r", "logWb", "logn", "logDb", "f", "logDc", "logQ"), k)
-    iter_total = int(_env_num("GEOBAM_WSE_ITER", data.get("iter", 2000)))
-    warmup = int(_env_num("GEOBAM_WSE_WARMUP", max(500, int(0.4 * iter_total))))
-    num_samples = max(1, iter_total - warmup)
-    chains = int(_env_num("GEOBAM_WSE_CHAINS", 3))
-    max_td = int(_env_num("GEOBAM_WSE_MAX_TREEDEPTH", 10))
-    adapt_delta = _env_num("GEOBAM_WSE_ADAPT_DELTA", 0.4)
-    dense = bool(_env_num("GEOBAM_WSE_DENSE_MASS", 0))
-    progress = bool(_env_num("GEOBAM_WSE_PROGRESS", 1))
 
-    print(f"problem size: nx={data['nx']} nt={data['nt']} ntot={data['ntot']}",
-          flush=True)
-    print(f"sampler: warmup={warmup} samples={num_samples} chains={chains} "
-          f"max_treedepth={max_td} target_accept={adapt_delta} "
-          f"dense_mass={dense}", flush=True)
-
-    # Start depth_min at its prior location rather than wherever the
-    # unconstrained default lands, which for a deep river puts z0 far above
-    # the bed and starts the chain in a badly curved region.
-    d0 = np.asarray(data["Hmin"] - data["z0_hat"], dtype=float)
-    d0[~np.isfinite(d0) | (d0 <= 0)] = 1.0
-    init_vals = {"depth_min": jnp.asarray(d0)}
-
-    kernel = NUTS(
-        geobam_wse_model,
-        max_tree_depth=max_td,
-        target_accept_prob=adapt_delta,
-        dense_mass=dense,
-        init_strategy=init_to_value(values=init_vals),
-    )
-
-    mcmc = MCMC(
-        kernel,
-        num_warmup=warmup,
-        num_samples=num_samples,
-        num_chains=chains,
-        chain_method="parallel" if chains > 1 else "sequential",
-        progress_bar=progress,
-    )
-
+    method = os.environ.get("GEOBAM_WSE_METHOD", "nuts").lower()
+    key_fit, key_draw = jax.random.split(jax.random.PRNGKey(seed))
     t0 = time.time()
-    mcmc.run(jax.random.PRNGKey(seed), data,
-             extra_fields=("diverging", "num_steps"))
-    print(f"sampling took {(time.time() - t0) / 60.0:.1f} min", flush=True)
 
-    _report_diagnostics(mcmc, max_td)
+    if method == "vi":
+        vi_steps = int(_env_num("GEOBAM_WSE_VI_STEPS", 10000))
+        vi_lr = _env_num("GEOBAM_WSE_VI_LR", 0.005)
+        guide = AutoMultivariateNormal(
+            geobam_wse_model, init_loc_fn=init_to_value(values=init_vals))
+        svi = SVI(geobam_wse_model, guide, optim.Adam(vi_lr), Trace_ELBO())
+        svi_result = svi.run(key_fit, vi_steps, data, progress_bar=progress)
+        print(f"VI took {(time.time() - t0) / 60.0:.1f} min", flush=True)
 
-    samples = mcmc.get_samples(group_by_chain=False)
+        # Convergence check: loss should have flattened by the end.
+        losses = np.asarray(svi_result.losses)
+        n10 = max(1, len(losses) // 10)
+        print(f"VI loss: start={losses[0]:.1f}  "
+              f"second-to-last 10%={losses[-2*n10:-n10].mean():.1f}  "
+              f"last 10%={losses[-n10:].mean():.1f}  "
+              f"finite={np.isfinite(losses).all()}", flush=True)
+
+        samples = Predictive(
+            geobam_wse_model, guide=guide, params=svi_result.params,
+            num_samples=num_samples * chains)(key_draw, data)
+
+    else:
+        kernel = NUTS(
+            geobam_wse_model,
+            max_tree_depth=max_td,
+            target_accept_prob=adapt_delta,
+            dense_mass=dense,
+            init_strategy=init_to_value(values=init_vals),
+        )
+        mcmc = MCMC(
+            kernel,
+            num_warmup=warmup,
+            num_samples=num_samples,
+            num_chains=chains,
+            chain_method="parallel" if chains > 1 else "sequential",
+            progress_bar=progress,
+        )
+        mcmc.run(key_fit, data, extra_fields=("diverging", "num_steps"))
+        print(f"sampling took {(time.time() - t0) / 60.0:.1f} min", flush=True)
+        _report_diagnostics(mcmc, max_td)
+        samples = mcmc.get_samples(group_by_chain=False)
+
     return _summarise(samples), np.asarray(samples["logQ"])
 
 
