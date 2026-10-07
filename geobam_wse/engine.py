@@ -52,7 +52,7 @@ from .flowlaw import build_index_arrays, remake_discharge  # noqa: F401
 
 # Parameters reported per node, in the order the output module expects.
 NODE_PARAMS = ("r", "logn", "logWb", "logDb", "f", "logDc", "z0")
-GEOBAM_WSE_BOUND_K = 0.5
+GEOBAM_WSE_BOUND_K = 0
 
 def _env_num(name, default, cast=float):
     raw = os.environ.get(name, "")
