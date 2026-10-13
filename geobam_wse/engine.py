@@ -113,13 +113,33 @@ def geobam_wse_model(data):
                        data["lowerbound_logWb"], data["upperbound_logWb"], nx)
     logn = _truncated("logn", data["logn_hat"], data["logn_sd"],
                       data["lowerbound_logn"], data["upperbound_logn"], nx)
-    logDb = _truncated("logDb", data["logDb_hat"], data["logDb_sd"],
-                       data["lowerbound_logDb"], data["upperbound_logDb"], nx)
     f = _truncated("f", data["f_hat"], data["f_sd"],
                    data["lowerbound_f"], data["upperbound_f"], nx)
+    # Db > Dc: bankfull depth must exceed congruent depth. logDc is sampled
+    # first; its upper bound is capped at logDb's so a valid Db always
+    # exists. Then logDb is drawn above it (see flowlaw.logdb_above_dc).
+    if data["db_gt_dc"]:
+        upper_logDc = jnp.minimum(data["upperbound_logDc"],
+                                  data["upperbound_logDb"])
+    else:
+        upper_logDc = data["upperbound_logDc"]
     logDc = _truncated("logDc", data["logDc_hat"], data["logDc_sd"],
-                       data["lowerbound_logDc"], data["upperbound_logDc"], nx)
+                       data["lowerbound_logDc"], upper_logDc, nx)
 
+    if data["db_gt_dc"]:
+        u_Db = numpyro.sample(
+            "u_Db", dist.Uniform(0.0, 1.0).expand([nx]).to_event(1))
+        logDb_val, log_mass = logdb_above_dc(
+            u_Db, logDc, data["logDb_hat"], data["logDb_sd"],
+            data["lowerbound_logDb"], data["upperbound_logDb"],
+            ndtr, ndtri, xp=jnp)
+        logDb = numpyro.deterministic("logDb", logDb_val)
+        numpyro.factor("db_gt_dc_prior", log_mass.sum())
+    else:
+        logDb = _truncated("logDb", data["logDb_hat"], data["logDb_sd"],
+                           data["lowerbound_logDb"], data["upperbound_logDb"],
+                           nx)
+ 
     # See note 2 in the module docstring: this is the z0 prior, re-expressed.
     depth_min = numpyro.sample(
         "depth_min",
