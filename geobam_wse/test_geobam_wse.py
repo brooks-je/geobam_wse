@@ -17,6 +17,7 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 from geobam_wse.flowlaw import build_index_arrays, log_qc, manning_terms  # noqa: E402
+from geobam_wse.flowlaw import logdb_above_dc  # noqa: E402
 
 
 def _synthetic(nx=8, nt=25, seed=1, missing=0.25):
@@ -137,7 +138,67 @@ def test_manning_term_has_no_parameter_on_its_left_side():
                          rng.normal(5, 1, 20))
     assert np.array_equal(a, b)
 
-
+def test_logdb_above_dc_respects_constraint_and_bounds():
+    from scipy.special import ndtr, ndtri
+    rng = np.random.default_rng(21)
+    n = 5000
+    logDc = rng.uniform(np.log(0.2), 3.0, n)
+    u = rng.uniform(1e-9, 1 - 1e-9, n)
+    lb, ub = -0.03, 3.85
+    logDb, lm = logdb_above_dc(u, logDc, 2.36, 0.83, lb, ub, ndtr, ndtri)
+    assert np.all(logDb >= logDc - 1e-12)
+    assert np.all((logDb >= lb) & (logDb <= ub))
+    assert np.all(np.isfinite(lm)) and np.all(lm <= 0)
+ 
+ 
+def test_logdb_above_dc_has_the_right_conditional_distribution():
+    """For fixed Dc, uniform u gives logDb's truncated normal above Dc."""
+    from scipy import stats
+    from scipy.special import ndtr, ndtri
+    rng = np.random.default_rng(22)
+    hat, sd, lb, ub, dc = 2.36, 0.83, -0.03, 3.85, 2.0
+    logDb, _ = logdb_above_dc(rng.uniform(size=20000), dc, hat, sd, lb, ub,
+                              ndtr, ndtri)
+    a, b = (dc - hat) / sd, (ub - hat) / sd
+    assert stats.kstest(logDb, stats.truncnorm(a, b, hat, sd).cdf).pvalue > 1e-3
+ 
+ 
+def test_db_gt_dc_factor_gives_joint_truncation():
+    """With the log_mass factor, the implied logDc marginal equals the
+    original priors restricted to Db > Dc (checked by rejection sampling)."""
+    from scipy import stats
+    from scipy.special import ndtr, ndtri
+    rng = np.random.default_rng(23)
+    hb, sb, lbb, ubb = 2.36, 0.83, -0.03, 3.85
+    hc, sc, lbc, ubc = np.log(1.5), 0.5, np.log(0.2), np.log(20.0)
+    ubc = min(ubc, ubb)
+    pc = stats.truncnorm((lbc - hc) / sc, (ubc - hc) / sc, hc, sc)
+    pb = stats.truncnorm((lbb - hb) / sb, (ubb - hb) / sb, hb, sb)
+ 
+    # Rejection: draw both independently, keep Db > Dc.
+    dc, db = pc.rvs(400000, random_state=rng), pb.rvs(400000, random_state=rng)
+    ref = dc[db > dc]
+ 
+    # Ours: draw Dc from its prior, weight by exp(log_mass).
+    dc2 = pc.rvs(400000, random_state=rng)
+    _, lm = logdb_above_dc(0.5, dc2, hb, sb, lbb, ubb, ndtr, ndtri)
+    w = np.exp(lm)
+    for q in (0.1, 0.5, 0.9):
+        order = np.argsort(dc2)
+        cw = np.cumsum(w[order]) / w.sum()
+        ours = dc2[order][np.searchsorted(cw, q)]
+        assert abs(ours - np.quantile(ref, q)) < 0.02, (q, ours)
+ 
+ 
+def test_engine_wires_the_db_gt_dc_constraint():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "..", "geobam_wse", "engine.py")
+    with open(path) as fh:
+        src = fh.read()
+    assert 'numpyro.deterministic("logDb"' in src
+    assert 'numpyro.factor("db_gt_dc_prior"' in src
+    assert src.index('_truncated("logDc"') < src.index("logdb_above_dc(")
+ 
 def test_depth_positivity_is_structural():
     """H - z0 >= depth_min > 0 for every observation, with no clamping."""
     truth, _, H, hasdat = _synthetic()
