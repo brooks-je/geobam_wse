@@ -132,6 +132,8 @@ def build_model_data(data, width_gates_hasdat=False):
         "Hmin": Hmin,
         "sigma_vec_man": np.full(ntot, sigma_man),
 
+        "db_gt_dc": bool(_env_num("GEOBAM_WSE_DB_GT_DC", 1)),
+        
         "inc_man": inc_man,
         "man_sel": man_sel,
         "logWobs_man": np.log(Wobsvec[man_sel]),
