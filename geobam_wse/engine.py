@@ -50,6 +50,7 @@ from numpyro.infer import SVI, Trace_ELBO, Predictive
 from numpyro.infer.autoguide import AutoMultivariateNormal
 from .flowlaw import build_index_arrays, remake_discharge  # noqa: F401
 from .flowlaw import manning_terms
+from geobam_wse.flowlaw import logdb_above_dc 
 # re-exported so callers can keep importing them from engine
 
 # Parameters reported per node, in the order the output module expects.
