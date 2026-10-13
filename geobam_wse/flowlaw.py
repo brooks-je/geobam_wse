@@ -59,6 +59,33 @@ def manning_terms(logW, logS, logd, r, logn_man, logQ, xp=np):
     rhs = 10.0 * logA - 6.0 * logn_man - 6.0 * logQ
     return lhs, rhs
 
+def logdb_above_dc(u, logDc, hat, sd, lb, ub, ndtr, ndtri, xp=np):
+    """Bankfull depth constrained above congruent depth: Db > Dc.
+ 
+    Maps u in (0, 1) to logDb through the inverse CDF of logDb's own
+    truncated-normal prior, with the lower bound raised to logDc:
+ 
+        logDb ~ TruncatedNormal(hat, sd, low=max(lb, logDc), high=ub)
+ 
+    Sampling u (fixed support) instead of logDb (support that moves with
+    logDc) keeps both NUTS and the VI autoguide well defined.
+ 
+    Also returns log_mass = log P(lb' < logDb < ub) under the untruncated
+    normal. Adding it as a factor turns the conditional prior above into
+    the original logDb and logDc priors restricted to Db > Dc, so Dc is
+    not pushed up just because the constraint renormalises.
+ 
+    ndtr / ndtri are the normal CDF and its inverse (scipy.special or
+    jax.scipy.special); xp is numpy or jax.numpy.
+    """
+    low = xp.maximum(lb, logDc)
+    a = ndtr((low - hat) / sd)
+    b = ndtr((ub - hat) / sd)
+    logDb = hat + sd * ndtri(a + u * (b - a))
+    logDb = xp.clip(logDb, low, ub)
+    log_mass = xp.log(xp.maximum(b - a, 1e-300))
+    return logDb, log_mass
+
 def remake_discharge(Sobs, Hobs, posteriors, hasdat=None):
     """Rebuild discharge from posterior means (diagnostic, not the reported Q).
 
