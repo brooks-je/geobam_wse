@@ -123,6 +123,12 @@ def build_model_data(data, width_gates_hasdat=False):
         print("Manning term: off", flush=True)
 
     q = data["sos_data"]["Q_priors"]
+    logQ_scale = _env_num("GEOBAM_WSE_LOGQ_SD_SCALE", 1.0)
+    logQ_pad = _env_num("GEOBAM_WSE_LOGQ_BOUND_PAD", 0.0)
+    logQ_sd = float(q["logQ_sd"]) * logQ_scale
+    print(f"Q prior: SoS logQ_sd {float(q['logQ_sd']):.3f} x {logQ_scale:g} "
+          f"= {logQ_sd:.3f}; bounds padded by {logQ_pad:.2f} (log)",
+          flush=True)
 
     return {
         "nx": nx, "nt": nt, "ntot": ntot,
@@ -140,9 +146,9 @@ def build_model_data(data, width_gates_hasdat=False):
         "sigma_vec_manning": np.full(man_sel.size, sigma_manning),
 
         "logQ_hat": np.asarray(q["logQ_hat"], dtype=float),
-        "logQ_sd": np.full(nt, float(q["logQ_sd"])),
-        "lowerbound_logQ": float(q["lowerbound_logQ"]),
-        "upperbound_logQ": float(q["upperbound_logQ"]),
+        "logQ_sd": np.full(nt, logQ_sd),
+        "lowerbound_logQ": float(q["lowerbound_logQ"]) - logQ_pad,
+        "upperbound_logQ": float(q["upperbound_logQ"]) + logQ_pad,
 
         "r_hat": np.full(nx, R_HAT), "r_sd": np.full(nx, R_SD),
         "lowerbound_r": R_LOWER, "upperbound_r": R_UPPER,
