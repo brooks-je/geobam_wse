@@ -11,8 +11,8 @@ from .engine import run_sampler
 from .flowlaw import build_index_arrays
 
 # Reach-constant priors, carried over unchanged from process.R.
-R_HAT, R_SD = 0.55, 0.15
-R_LOWER, R_UPPER = 0.3, 1.0
+R_HAT, R_SD = 2.16, 2.26 # 0.55, 0.15
+R_LOWER, R_UPPER = 0.078, 3095.54 # 0.3, 1.0
 
 LOGWB_HAT, LOGWB_SD = 6.44, 1.22
 LOGWB_LOWER, LOGWB_UPPER = 4.4, 9.95
