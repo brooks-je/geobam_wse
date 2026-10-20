@@ -20,8 +20,8 @@ LOGWB_LOWER, LOGWB_UPPER = 4.4, 9.95
 LOGDB_HAT, LOGDB_SD = 2.36, 0.83
 LOGDB_LOWER, LOGDB_UPPER = -0.03, 3.85
 
-LOGN_HAT, LOGN_SD = np.log(0.03), 0.1
-LOGN_LOWER, LOGN_UPPER = np.log(0.01), np.log(0.05)
+LOGN_HAT, LOGN_SD = np.log(0.03), 0.1 # TO UPDATE: np.log(0.03), np.log(0.01)
+LOGN_LOWER, LOGN_UPPER = np.log(0.01), np.log(0.05) # TO UPDATE: np.log(0.0001), np,log(0.09)
 
 # Depth-model priors. f is the AHG depth exponent, d_c the depth scale.
 F_HAT, F_SD = 0.45, 0.10
@@ -30,7 +30,7 @@ F_LOWER, F_UPPER = 0.05, 0.90
 LOGDC_HAT, LOGDC_SD = np.log(1.5), 0.50
 LOGDC_LOWER, LOGDC_UPPER = np.log(0.2), np.log(20.0)
 
-# Bed-elevation prior scale, in metres.
+# Bed-elevation prior scale, in meters.
 Z0_SD = 1.0
 
 SIGMA_MAN = 0.117
