@@ -31,7 +31,7 @@ LOGDC_HAT, LOGDC_SD = np.log(1.5), 0.50
 LOGDC_LOWER, LOGDC_UPPER = np.log(0.2), np.log(20.0)
 
 # Bed-elevation prior scale, in meters.
-Z0_SD = 1.0
+Z0_SD = 0.1
 
 SIGMA_MAN = 0.117
 
