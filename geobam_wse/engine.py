@@ -52,6 +52,7 @@ from .flowlaw import build_index_arrays, remake_discharge  # noqa: F401
 from .flowlaw import manning_terms
 from geobam_wse.flowlaw import logdb_above_dc 
 from jax.scipy.special import ndtr, ndtri
+from scipy.stats import truncnorm
 # re-exported so callers can keep importing them from engine
 
 # Parameters reported per node, in the order the output module expects.
@@ -93,6 +94,46 @@ def _tighten_bounds(data, names, k):
         data[f"upperbound_{name}"] = hi
     return data
 
+def _b_prior(data, n=20000, seed=0, min_keep=200):
+    """Prior on the identified intercept b = logDc - f*c, where c is the
+    node part of logQc. Pushes the existing priors through by Monte Carlo
+    and returns b | f as a linear regression: b ~ N(a + beta*f, sd)."""
+    nx = int(data["nx"])
+    rng = np.random.default_rng(seed)
+
+    def vec(x):
+        return np.broadcast_to(np.asarray(x, dtype=float), (nx,))
+
+    def draw(name):
+        mu, sd = vec(data[f"{name}_hat"]), vec(data[f"{name}_sd"])
+        lo = (vec(data[f"lowerbound_{name}"]) - mu) / sd
+        hi = (vec(data[f"upperbound_{name}"]) - mu) / sd
+        return truncnorm.rvs(lo, hi, loc=mu, scale=sd,
+                             size=(n, nx), random_state=rng)
+
+    r, f = draw("r"), draw("f")
+    logWb, logDb, logn, logDc = (draw(k) for k in
+                                 ("logWb", "logDb", "logn", "logDc"))
+    invr = 1.0 / r
+    c = (logWb - invr * logDb + invr * np.log((r + 1.0) / r)
+         - logn + (5.0 / 3.0 + invr) * logDc)
+    b = logDc - f * c
+
+    keep = (logDb > logDc) if data["db_gt_dc"] else np.ones_like(b, bool)
+
+    a, beta, sd = np.empty(nx), np.empty(nx), np.empty(nx)
+    for i in range(nx):
+        ok = keep[:, i] & np.isfinite(b[:, i])
+        if ok.sum() < min_keep:                  # Db/Dc priors barely overlap
+            print(f"  b prior: node {i} has {ok.sum()} draws with Db > Dc; "
+                  "using unfiltered draws", flush=True)
+            ok = np.isfinite(b[:, i])
+        X = np.column_stack([np.ones(ok.sum()), f[ok, i]])
+        coef, *_ = np.linalg.lstsq(X, b[ok, i], rcond=None)
+        a[i], beta[i] = coef
+        sd[i] = max((b[ok, i] - X @ coef).std(), 1e-3)
+    return a, beta, sd
+
 def geobam_wse_model(data):
     """The AHG/AMHG depth model as a NumPyro model."""
     nx = int(data["nx"])
@@ -106,42 +147,17 @@ def geobam_wse_model(data):
     sigma_vec = data["sigma_vec_man"]
     Hmin = data["Hmin"]
 
-    # --- Parameters -------------------------------------------------------
+    # --- Parameters shared by both forms ----------------------------------
     logQ = _truncated("logQ", data["logQ_hat"], data["logQ_sd"],
                       data["lowerbound_logQ"], data["upperbound_logQ"], nt)
-    r = _truncated("r", data["r_hat"], data["r_sd"],
-                   data["lowerbound_r"], data["upperbound_r"], nx)
-    logWb = _truncated("logWb", data["logWb_hat"], data["logWb_sd"],
-                       data["lowerbound_logWb"], data["upperbound_logWb"], nx)
-    logn = _truncated("logn", data["logn_hat"], data["logn_sd"],
-                      data["lowerbound_logn"], data["upperbound_logn"], nx)
     f = _truncated("f", data["f_hat"], data["f_sd"],
                    data["lowerbound_f"], data["upperbound_f"], nx)
-    # Db > Dc: bankfull depth must exceed congruent depth. logDc is sampled
-    # first; its upper bound is capped at logDb's so a valid Db always
-    # exists. Then logDb is drawn above it (see flowlaw.logdb_above_dc).
-    if data["db_gt_dc"]:
-        upper_logDc = jnp.minimum(data["upperbound_logDc"],
-                                  data["upperbound_logDb"])
-    else:
-        upper_logDc = data["upperbound_logDc"]
-    logDc = _truncated("logDc", data["logDc_hat"], data["logDc_sd"],
-                       data["lowerbound_logDc"], upper_logDc, nx)
 
-    if data["db_gt_dc"]:
-        u_Db = numpyro.sample(
-            "u_Db", dist.Uniform(0.0, 1.0).expand([nx]).to_event(1))
-        logDb_val, log_mass = logdb_above_dc(
-            u_Db, logDc, data["logDb_hat"], data["logDb_sd"],
-            data["lowerbound_logDb"], data["upperbound_logDb"],
-            ndtr, ndtri, xp=jnp)
-        logDb = numpyro.deterministic("logDb", logDb_val)
-        numpyro.factor("db_gt_dc_prior", log_mass.sum())
-    else:
-        logDb = _truncated("logDb", data["logDb_hat"], data["logDb_sd"],
-                           data["lowerbound_logDb"], data["upperbound_logDb"],
-                           nx)
- 
+    # r is needed by the full form, and by Manning in either form.
+    if (not data["reduced"]) or data["inc_man"]:
+        r = _truncated("r", data["r_hat"], data["r_sd"],
+                       data["lowerbound_r"], data["upperbound_r"], nx)
+
     # See note 2 in the module docstring: this is the z0 prior, re-expressed.
     depth_min = numpyro.sample(
         "depth_min",
@@ -149,46 +165,66 @@ def geobam_wse_model(data):
                              scale=data["z0_sd"], low=0.0)
         .expand([nx]).to_event(1),
     )
-
-    # --- Derived ----------------------------------------------------------
     z0 = numpyro.deterministic("z0", Hmin - depth_min)
-
-    r_c = r[xind]
-    invr = 1.0 / r_c
-
     d_obs = Hobsvec - z0[xind]      # >= depth_min > 0 by construction
     logd = jnp.log(d_obs)
 
-  # Congruent discharge
-    logQc = (logWb[xind]
-             - invr * logDb[xind]
-             + invr * (jnp.log(r_c + 1.0) - jnp.log(r_c))
-             + 0.5 * logSobsvec
-             - logn[xind]
-             + (5.0 / 3.0 + invr) * logDc[xind])
+    if data["reduced"]:
+        # --- Reduced form: only b = logDc - f*c reaches the likelihood ----
+        # logWb, logDb, logn, logDc (and r, without Manning) enter the depth
+        # line only through b, so b is sampled directly. Its prior comes
+        # from _b_prior; the Db > Dc constraint is applied there.
+        b = numpyro.sample(
+            "b", dist.Normal(data["b_a"] + data["b_beta"] * f,
+                             data["b_sd"]).to_event(1))
+        depth_rhs = b[xind] + f[xind] * (logQ[tind] - 0.5 * logSobsvec)
 
-    # The AHG/AMHG depth line.
-    depth_rhs = logDc[xind] + f[xind] * (logQ[tind] - logQc)
+    else:
+        # --- Full form (original parameterisation) -------------------------
+        logWb = _truncated("logWb", data["logWb_hat"], data["logWb_sd"],
+                           data["lowerbound_logWb"], data["upperbound_logWb"], nx)
+        logn = _truncated("logn", data["logn_hat"], data["logn_sd"],
+                          data["lowerbound_logn"], data["upperbound_logn"], nx)
+        if data["db_gt_dc"]:
+            upper_logDc = jnp.minimum(data["upperbound_logDc"],
+                                      data["upperbound_logDb"])
+        else:
+            upper_logDc = data["upperbound_logDc"]
+        logDc = _truncated("logDc", data["logDc_hat"], data["logDc_sd"],
+                           data["lowerbound_logDc"], upper_logDc, nx)
+        if data["db_gt_dc"]:
+            u_Db = numpyro.sample(
+                "u_Db", dist.Uniform(0.0, 1.0).expand([nx]).to_event(1))
+            logDb_val, log_mass = logdb_above_dc(
+                u_Db, logDc, data["logDb_hat"], data["logDb_sd"],
+                data["lowerbound_logDb"], data["upperbound_logDb"],
+                ndtr, ndtri, xp=jnp)
+            logDb = numpyro.deterministic("logDb", logDb_val)
+            numpyro.factor("db_gt_dc_prior", log_mass.sum())
+        else:
+            logDb = _truncated("logDb", data["logDb_hat"], data["logDb_sd"],
+                               data["lowerbound_logDb"],
+                               data["upperbound_logDb"], nx)
 
-    # Likelihood on observed log-depth. logd depends on depth_min, so this
-    # cannot be an `obs=` site.
+        r_c = r[xind]
+        invr = 1.0 / r_c
+        logQc = (logWb[xind]
+                 - invr * logDb[xind]
+                 + invr * (jnp.log(r_c + 1.0) - jnp.log(r_c))
+                 + 0.5 * logSobsvec
+                 - logn[xind]
+                 + (5.0 / 3.0 + invr) * logDc[xind])
+        depth_rhs = logDc[xind] + f[xind] * (logQ[tind] - logQc)
+
+    # Likelihood on observed log-depth (logd depends on depth_min).
     numpyro.factor(
         "depth_likelihood",
         dist.Normal(depth_rhs, sigma_vec).log_prob(logd).sum(),
     )
-
     # See note 1: change of variables from H to log-depth.
     numpyro.factor("jacobian", -logd.sum())
 
-    # --- Manning likelihood (geoBAM's inc_m branch, depth form) ------------
-    # Shares logQ with the depth line above; that shared logQ is what
-    # balances the two, exactly as in geoBAM. Like geoBAM it gets its own
-    # roughness, logn_man, with the same prior as logn. Applied only on cells
-    # with a usable width (geoBAM's hasdat_man).
-    #
-    # No extra Jacobian: the left-hand side is data only (log W, log S) and
-    # z0 enters through the mean, so this is a density over the data as
-    # written -- the same structure as geoBAM's Manning term.
+    # --- Manning likelihood (unchanged) ------------------------------------
     if data["inc_man"]:
         logn_man = _truncated("logn_man", data["logn_hat"], data["logn_sd"],
                               data["lowerbound_logn"],
@@ -210,6 +246,15 @@ def run_sampler(data, seed=0):
     if k > 0:
         data = _tighten_bounds(
             data, ("r", "logWb", "logn", "logDb", "f", "logDc", "logQ"), k)
+
+    data = dict(data)
+    data["reduced"] = bool(_env_num("GEOBAM_WSE_REDUCED", 1))
+    if data["reduced"]:
+        data["b_a"], data["b_beta"], data["b_sd"] = _b_prior(data, seed=seed)
+        print("parameterisation: reduced (b, f, depth_min per node)", flush=True)
+    else:
+        print("parameterisation: full", flush=True)
+        
     iter_total = int(_env_num("GEOBAM_WSE_ITER", data.get("iter", 2000)))
     warmup = int(_env_num("GEOBAM_WSE_WARMUP", max(500, int(0.4 * iter_total))))
     num_samples = max(1, iter_total - warmup)
@@ -329,7 +374,7 @@ def _summarise(samples):
     design choice; see PORTING_NOTES.md.
     """
     out = {}
-    for name in NODE_PARAMS + ("logQ", "depth_min"):
+    for name in NODE_PARAMS + ("logQ", "depth_min", "b"):
         if name not in samples:
             continue
         draws = np.asarray(samples[name])
