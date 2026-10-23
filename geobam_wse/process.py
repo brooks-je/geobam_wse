@@ -30,6 +30,9 @@ F_LOWER, F_UPPER = 0.05, 0.90
 LOGDC_HAT, LOGDC_SD = np.log(1.5), 0.50
 LOGDC_LOWER, LOGDC_UPPER = np.log(0.2), np.log(20.0)
 
+B_HAT, B_SD = -3.116551748, 1.169345828
+B_LOWER, B_UPPER = -9.494032549, 2.151917395
+
 # Bed-elevation prior scale, in meters.
 Z0_SD = 1.0
 
