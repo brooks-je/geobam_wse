@@ -174,9 +174,15 @@ def geobam_wse_model(data):
         # logWb, logDb, logn, logDc (and r, without Manning) enter the depth
         # line only through b, so b is sampled directly. Its prior comes
         # from _b_prior; the Db > Dc constraint is applied there.
-        b = numpyro.sample(
-            "b", dist.Normal(data["b_a"] + data["b_beta"] * f,
-                             data["b_sd"]).to_event(1))
+        if data["b_from_mc"]:
+            # fallback: Monte Carlo prior, b | f
+            b = numpyro.sample(
+                "b", dist.Normal(data["b_a"] + data["b_beta"] * f,
+                                 data["b_sd"]).to_event(1))
+        else:
+            # prior supplied by process.py
+            b = _truncated("b", data["b_hat"], data["b_sd"],
+                           data["lowerbound_b"], data["upperbound_b"], nx)
         depth_rhs = b[xind] + f[xind] * (logQ[tind] - 0.5 * logSobsvec)
 
     else:
@@ -250,8 +256,12 @@ def run_sampler(data, seed=0):
     data = dict(data)
     data["reduced"] = bool(_env_num("GEOBAM_WSE_REDUCED", 1))
     if data["reduced"]:
-        data["b_a"], data["b_beta"], data["b_sd"] = _b_prior(data, seed=seed)
-        print("parameterisation: reduced (b, f, depth_min per node)", flush=True)
+        if "b_hat" in data:
+            print("b prior: from process.py", flush=True)
+        else:
+            data["b_a"], data["b_beta"], data["b_sd"] = _b_prior(data, seed=seed)
+            data["b_from_mc"] = True
+            print("b prior: Monte Carlo from hydraulic priors", flush=True)
     else:
         print("parameterisation: full", flush=True)
         
