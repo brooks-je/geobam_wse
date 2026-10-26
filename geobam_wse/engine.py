@@ -255,6 +255,7 @@ def run_sampler(data, seed=0):
 
     data = dict(data)
     data["reduced"] = bool(_env_num("GEOBAM_WSE_REDUCED", 1))
+    data["b_from_mc"] = False
     if data["reduced"]:
         if "b_hat" in data:
             print("b prior: from process.py", flush=True)
