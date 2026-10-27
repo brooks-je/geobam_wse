@@ -12,7 +12,7 @@ import numpy as np
 FILL = -999999999999.0
 
 # POSTERIOR_GROUPS = ("r", "logn", "logWb", "logDb", "f", "logDc", "z0", "logn_man")
-POSTERIOR_GROUPS = ("f", "z0")
+POSTERIOR_GROUPS = ("f", "z0", "b")
 
 def concatenate_invalid(values, invalid_times):
     """Reinsert NaN at the timesteps that were dropped before sampling."""
