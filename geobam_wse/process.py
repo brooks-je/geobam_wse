@@ -66,8 +66,9 @@ def build_model_data(data, width_gates_hasdat=False):
     Hobs = np.asarray(data["swot_data"]["wse"], dtype=float)
     Sobs = np.asarray(data["swot_data"]["slope2"], dtype=float)
     Wobs = np.asarray(data["swot_data"]["width"], dtype=float)
-    GEOBAM_WSE_SIGMA_MAN = np.asarray(data["swot_data"]["wse_u"], dtype=float)
-    GEOBAM_WSE_SIGMA_MANNING = np.asarray(data["swot_data"]["width_u"], dtype=float)
+    Hu = np.asarray(data["swot_data"]["wse_u"], dtype=float)
+    Wu = np.asarray(data["swot_data"]["width_u"], dtype=float)
+    use_obs_u = bool(_env_num("GEOBAM_WSE_USE_OBS_U", 0))
 
     nx, nt = Hobs.shape
 
@@ -111,6 +112,14 @@ def build_model_data(data, width_gates_hasdat=False):
 
     sigma_man = _env_num("GEOBAM_WSE_SIGMA_MAN", SIGMA_MAN)
 
+    if use_obs_u:
+        d_ref = np.exp(LOGDC_HAT)   # reference depth for m -> log-depth; approximate
+        obs = Hu[xind, tind] / d_ref
+        obs = np.where(np.isfinite(obs), obs, 0.0)   # missing u -> base sigma only
+        sigma_vec_man = np.sqrt(sigma_man**2 + obs**2)
+    else:
+        sigma_vec_man = np.full(ntot, sigma_man)
+
     print(f"z0 prior: {np.exp(LOGDC_HAT):.2f} m below each node's minimum "
           f"WSE, sd {z0_sd[0]:.2f} m | sigma_man {sigma_man:.3f} "
           f"(log-depth scale)", flush=True)
@@ -122,6 +131,14 @@ def build_model_data(data, width_gates_hasdat=False):
     man_sel = np.nonzero(man_ok)[0].astype(np.int32)
     inc_man = bool(_env_num("GEOBAM_WSE_MANNING", 1)) and man_sel.size >= 3
     sigma_manning = _env_num("GEOBAM_WSE_SIGMA_MANNING", SIGMA_MANNING)
+
+    if use_obs_u:
+        rel = Wu[xind, tind][man_sel] / Wobsvec[man_sel]
+        rel = np.where(np.isfinite(rel), rel, 0.0)
+        sigma_vec_manning = np.sqrt(sigma_manning**2 + rel**2)
+    else:
+        sigma_vec_manning = np.full(man_sel.size, sigma_manning)
+    
     if inc_man:
         print(f"Manning term: on, {man_sel.size}/{ntot} cells with width, "
               f"sigma {sigma_manning:.3f} (log-Q scale)", flush=True)
@@ -142,14 +159,14 @@ def build_model_data(data, width_gates_hasdat=False):
         "Hobsvec": Hobsvec,
         "logSobsvec": logSobsvec,
         "Hmin": Hmin,
-        "sigma_vec_man": np.full(ntot, sigma_man),
+        "sigma_vec_man": sigma_vec_man,
 
         "db_gt_dc": bool(_env_num("GEOBAM_WSE_DB_GT_DC", 1)),
         
         "inc_man": inc_man,
         "man_sel": man_sel,
         "logWobs_man": np.log(Wobsvec[man_sel]),
-        "sigma_vec_manning": np.full(man_sel.size, sigma_manning),
+        "sigma_vec_manning": sigma_vec_manning,
 
         "logQ_hat": np.asarray(q["logQ_hat"], dtype=float),
         "logQ_sd": np.full(nt, logQ_sd),
