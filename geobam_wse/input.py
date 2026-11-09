@@ -251,11 +251,13 @@ def check_observations(swot_data, sos_data, width_gates_validity=True):
     slope2 = swot_data["slope2"].copy()
     wse = swot_data["wse"].copy()
     t_sec = swot_data["time"].copy()
+    wse_u = swot_data["wse_u"].copy()
+    width_u = swot_data["width_u"].copy()
 
     width[~np.isfinite(width) | (width < 0)] = np.nan
     slope2[~np.isfinite(slope2) | (slope2 < 0)] = np.nan
     wse[~np.isfinite(wse) | (wse < WSE_MIN) | (wse > WSE_MAX)] = np.nan
-
+    
     logQ_hat = _monthly_to_timestep(q["logQ_hat_monthly"], t_sec)
 
     invalid_nodes, invalid_times = get_invalid_nodes_times(
@@ -268,6 +270,7 @@ def check_observations(swot_data, sos_data, width_gates_validity=True):
         return a[np.ix_(keep_nodes, keep_times)]
 
     width, slope2, wse, t_sec = cut(width), cut(slope2), cut(wse), cut(t_sec)
+    wse_u, width_u = cut(wse_u), cut(width_u)
     logQ_hat = logQ_hat[keep_times]
 
     for name, arr in (("slope2", slope2), ("wse", wse), ("time", t_sec)):
@@ -280,7 +283,7 @@ def check_observations(swot_data, sos_data, width_gates_validity=True):
 
     return {
         "swot_data": {"width": width, "slope2": slope2, "wse": wse,
-                      "time": t_sec},
+                      "time": t_sec, "wse_u": wse_u, "width_u": width_u},
         "sos_data": {"Q_priors": q},
         "invalid_nodes": invalid_nodes,
         "invalid_times": invalid_times,
