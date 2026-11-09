@@ -95,6 +95,8 @@ def get_swot(swot_file):
         slope2 = _to_nx_nt(_masked_to_nan(node.variables["slope2"][:]), n_x, n_t)
         wse = _to_nx_nt(_masked_to_nan(node.variables["wse"][:]), n_x, n_t)
         t_sec = _to_nx_nt(_masked_to_nan(node.variables["time"][:]), n_x, n_t)
+        wse_u = _to_nx_nt(_masked_to_nan(node.variables["wse_u"][:]), n_x, n_t)
+        width_u = _to_nx_nt(_masked_to_nan(node.variables["width_u"][:]), n_x, n_t)
 
         obs_times = read_strings(ds.groups["reach"].variables["time_str"])
         if obs_times.size != n_t:
@@ -105,6 +107,7 @@ def get_swot(swot_file):
     return {
         "nx": nx, "nt": nt,
         "width": width, "slope2": slope2, "wse": wse, "time": t_sec,
+        "wse_u": wse_u, "width_u": width_u,
         "obs_times": obs_times,
     }
 
