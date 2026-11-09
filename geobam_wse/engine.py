@@ -38,10 +38,10 @@ import os
 import time
 
 import numpy as np
-
+import numpyro
+numpyro.set_host_device_count(3)
 import jax
 import jax.numpy as jnp
-import numpyro
 import numpyro.distributions as dist
 from numpyro.infer import MCMC, NUTS, init_to_value
 import numpyro.optim as optim
