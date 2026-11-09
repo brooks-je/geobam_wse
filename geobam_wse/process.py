@@ -40,7 +40,7 @@ SIGMA_MAN = 0.117
 
 SIGMA_MANNING = 0.26
 
-ITER = 2000
+ITER = 1000
 
 
 def _env_num(name, default):
