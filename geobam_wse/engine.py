@@ -39,7 +39,7 @@ import time
 
 import numpy as np
 import numpyro
-numpyro.set_host_device_count(3)
+numpyro.set_host_device_count(4)
 import jax
 import jax.numpy as jnp
 import numpyro.distributions as dist
