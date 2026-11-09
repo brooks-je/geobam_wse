@@ -266,9 +266,6 @@ def run_sampler(data, seed=0):
     else:
         print("parameterisation: full", flush=True)
 
-    GEOBAM_WSE_ITER=700 
-    GEOBAM_WSE_WARMUP=300
-        
     iter_total = int(_env_num("GEOBAM_WSE_ITER", data.get("iter", 2000)))
     warmup = int(_env_num("GEOBAM_WSE_WARMUP", max(500, int(0.4 * iter_total))))
     num_samples = max(1, iter_total - warmup)
