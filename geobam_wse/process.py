@@ -66,6 +66,8 @@ def build_model_data(data, width_gates_hasdat=False):
     Hobs = np.asarray(data["swot_data"]["wse"], dtype=float)
     Sobs = np.asarray(data["swot_data"]["slope2"], dtype=float)
     Wobs = np.asarray(data["swot_data"]["width"], dtype=float)
+    GEOBAM_WSE_SIGMA_MAN = np.asarray(data["swot_data"]["wse_u"], dtype=float)
+    GEOBAM_WSE_SIGMA_MANNING = np.asarray(data["swot_data"]["width_u"], dtype=float)
 
     nx, nt = Hobs.shape
 
@@ -82,6 +84,7 @@ def build_model_data(data, width_gates_hasdat=False):
     Hobsvec = Hobs[xind, tind]
     Sobsvec = Sobs[xind, tind]
     logSobsvec = np.log(Sobsvec)
+    
 
     # Per-node minimum of the WSE cells hasdat marks usable. The engine
     # derives z0 = Hmin - depth_min from this, so it has to be computed over
